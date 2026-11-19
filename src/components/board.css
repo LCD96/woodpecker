@@ -1,0 +1,23 @@
+/* Lichess "brown": chessground.brown.css only ships a 20% black overlay, which looks washed out.
+   These are the real lichess.org square colors. */
+.board-wrap cg-board {
+  background-color: #f0d9b5;
+  background-image: repeating-conic-gradient(#b58863 0 25%, #f0d9b5 0 50%);
+  background-size: 25% 25%;
+}
+
+.board-wrap {
+  width: 100%;
+  max-width: min(600px, 72svh);
+  margin: 0 auto;
+}
+
+.board-wrap .cg-wrap {
+  width: 100%;
+  aspect-ratio: 1;
+}
+
+.board-wrap coords {
+  font-size: 10px;
+  font-weight: 600;
+}
