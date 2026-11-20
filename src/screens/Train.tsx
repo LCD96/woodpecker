@@ -7,17 +7,19 @@ import { useCallback, useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { PuzzleSolver, type SolveResult } from "../components/PuzzleSolver";
 import { Progress } from "../components/charts";
-import { db, type Cycle, type Puzzle } from "../lib/db";
-import { currentCycle, nextPuzzleId, ritmo, startNextCycle } from "../lib/cycles";
+import { db, newId, type Cycle, type Puzzle } from "../lib/db";
+import { useSync } from "../lib/sync";
+import { PLAZOS, currentCycle, finishCycle, nextPuzzleId, ritmo, startNextCycle } from "../lib/cycles";
 import { useSettings } from "../lib/settings";
 import { minutesToday } from "../lib/stats";
 
 export function Train() {
-  const [cycle, setCycle] = useState<Cycle>();
+  const cycle = useLiveQuery(async () => (await currentCycle()) ?? null, []);
   const [puzzle, setPuzzle] = useState<Puzzle>();
   const [done, setDone] = useState(false);
   const [pace, setPace] = useState<Awaited<ReturnType<typeof ritmo>>>();
   const { dailyGoalMin } = useSettings();
+  const sync = useSync();
   const today = useLiveQuery(async () => minutesToday(await db.attempts.toArray(), await db.reviews.toArray()), [], 0);
 
   const loadNext = useCallback(async (c: Cycle) => {
@@ -26,31 +28,37 @@ export function Train() {
     const p = id ? await db.puzzles.get(id) : undefined;
     setPuzzle(p);
     setDone(!p);
+    if (!id) await finishCycle(c);
   }, []);
 
+  // Solo al cambiar de ciclo (no en cada actualización del objeto): si no, se saltaría el puzzle en curso
+  const cycleKey = cycle ? `${cycle.id}|${cycle.start}` : cycle;
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      let c = await currentCycle();
-      if (!c) { await startNextCycle(); c = await currentCycle(); }
-      if (!cancelled && c) { setCycle(c); await loadNext(c); }
-    })();
+    (async () => { if (cycle && !cancelled) await loadNext(cycle); })();
     return () => { cancelled = true; };
-  }, [loadNext]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cycleKey, loadNext]);
 
   const onResult = useCallback(async (r: SolveResult) => {
     if (!puzzle || !cycle) return;
-    await db.attempts.add({ puzzleId: puzzle.id, cycle: cycle.n, ...r, date: new Date().toISOString() });
+    await db.attempts.add({ id: newId(), puzzleId: puzzle.id, cycle: cycle.n, ...r, date: new Date().toISOString() });
     setPace(await ritmo(cycle));
   }, [puzzle, cycle]);
 
-  const nextCycle = async () => {
-    if (!cycle) return;
-    await db.cycles.update(cycle.n, { end: new Date().toISOString() });
-    await startNextCycle();
-    const c = await currentCycle();
-    if (c) { setCycle(c); await loadNext(c); }
-  };
+  if (cycle === null) {
+    return (
+      <div className="screen">
+        <div className="card center">
+          <h2>Ready for cycle 1?</h2>
+          <p className="muted">Your first cycle has {PLAZOS[0]} days. The clock starts when you press the button.</p>
+          {sync.waitingFirstSync && <p className="callout info">Downloading your progress from the cloud…</p>}
+          {sync.enabled && !sync.user && <p className="small muted">Already training on another device? Sign in on the Sync tab first so this device continues that cycle.</p>}
+          <button className="btn primary" disabled={sync.waitingFirstSync} onClick={startNextCycle}>Start cycle 1</button>
+        </div>
+      </div>
+    );
+  }
 
   const total = pace ? pace.hechos + pace.restantes : 0;
 
@@ -73,8 +81,8 @@ export function Train() {
       {done && (
         <div className="card center">
           <h2>Cycle {cycle?.n} complete 🎉</h2>
-          <p className="muted">Check the Stats tab to compare it with your earlier cycles.</p>
-          <button className="btn primary" onClick={nextCycle}>Start cycle {(cycle?.n ?? 0) + 1}</button>
+          <p className="muted">Check the Stats tab to compare it with your earlier cycles. Take a break if you like: the next cycle's clock starts when you press the button.</p>
+          <button className="btn primary" onClick={startNextCycle}>Start cycle {(cycle?.n ?? 0) + 1}</button>
         </div>
       )}
       {!puzzle && !done && <p className="muted center">Loading…</p>}

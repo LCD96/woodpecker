@@ -2,6 +2,15 @@ import { useState } from "react";
 import { Card } from "../components/charts";
 import { connectByUsername, disconnect, oauthAvailable, startLogin } from "../lib/lichess";
 import { setSetting, useSettings } from "../lib/settings";
+import { RATING_BUCKETS, SPEEDS } from "../lib/openings/explorer";
+
+const TOLERANCE = [
+  { v: 0.08, label: "Lenient" },
+  { v: 0.05, label: "Normal" },
+  { v: 0.03, label: "Strict" },
+];
+
+const toggle = <T,>(xs: T[], x: T) => (xs.includes(x) ? xs.filter((y) => y !== x) : [...xs, x]);
 
 const GOALS = [10, 15, 20, 30, 45, 60, 90];
 
@@ -18,7 +27,7 @@ export function Settings() {
   return (
     <div className="screen">
       <Card title="Daily goal">
-        <p className="small muted">Minutes of puzzle solving per day (cycle puzzles + reviews).</p>
+        <p className="small muted">Minutes of training per day: cycle puzzles, reviews and opening practice.</p>
         <div className="chips">
           {GOALS.map((g) => <button key={g} className={s.dailyGoalMin === g ? "on" : ""} onClick={() => setSetting("dailyGoalMin", g)}>{g} min</button>)}
         </div>
@@ -47,7 +56,39 @@ export function Settings() {
             </form>
           </>
         )}
-        <p className="small muted">Used to import mistakes from your analysed games into the Review tab.</p>
+        <p className="small muted">Used to import mistakes from your analysed games into the Review tab, and for the
+          opening explorer at your rating (Lichess only allows it when you log in; with just a username you get master games).</p>
+      </Card>
+
+      <Card title="Openings">
+        <p className="small">Explorer</p>
+        <div className="chips">
+          <button className={s.explorerSource === "lichess" ? "on" : ""} onClick={() => setSetting("explorerSource", "lichess")}>Lichess players</button>
+          <button className={s.explorerSource === "masters" ? "on" : ""} onClick={() => setSetting("explorerSource", "masters")}>Masters</button>
+        </div>
+        {s.explorerSource === "lichess" && <>
+          <p className="small">Ratings</p>
+          <div className="chips">
+            {RATING_BUCKETS.map((r) => <button key={r} className={s.explorerRatings.includes(r) ? "on" : ""}
+              onClick={() => { const v = toggle(s.explorerRatings, r).sort((a, b) => a - b); if (v.length) setSetting("explorerRatings", v); }}>{r}+</button>)}
+          </div>
+          <p className="small">Time controls</p>
+          <div className="chips">
+            {SPEEDS.map((x) => <button key={x} className={s.explorerSpeeds.includes(x) ? "on" : ""}
+              onClick={() => { const v = toggle(s.explorerSpeeds, x); if (v.length) setSetting("explorerSpeeds", v); }}>{x}</button>)}
+          </div>
+        </>}
+        <p className="small">Moves outside your repertoire</p>
+        <div className="chips">
+          {TOLERANCE.map((t) => <button key={t.v} className={s.openingTolerance === t.v ? "on" : ""} onClick={() => setSetting("openingTolerance", t.v)}>{t.label}</button>)}
+        </div>
+        <p className="small muted">A different move only counts as a mistake if it loses more than {Math.round(s.openingTolerance * 100)}% winning
+          chances compared with the best move (about {Math.round(Math.log(1 / (0.5 - s.openingTolerance) - 1) / 0.00368208)} centipawns in a level position). Otherwise you just try again.</p>
+        <label className="field">
+          New positions per day
+          <input type="number" min={0} max={200} value={s.newCardsPerDay}
+                 onChange={(e) => { const v = +e.target.value; if (v >= 0) setSetting("newCardsPerDay", v); }} />
+        </label>
       </Card>
 
       {msg && <p className="callout info">{msg}</p>}

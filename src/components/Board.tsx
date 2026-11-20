@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { Key } from "@lichess-org/chessground/types";
+import type { DrawShape } from "@lichess-org/chessground/draw";
 import "@lichess-org/chessground/assets/chessground.base.css";
 import "@lichess-org/chessground/assets/chessground.brown.css";
 import "@lichess-org/chessground/assets/chessground.cburnett.css";
@@ -16,9 +17,13 @@ interface Props {
   onMove: (from: string, to: string) => void;
   /** Quién puede mover; por defecto el color de abajo */
   movableColor?: "white" | "black" | "both";
+  /** Flechas y círculos (pistas, jugadas sugeridas) */
+  shapes?: DrawShape[];
 }
 
-export function Board({ fen, orientation, turnColor, dests, lastMove, onMove, movableColor }: Props) {
+export type { DrawShape };
+
+export function Board({ fen, orientation, turnColor, dests, lastMove, onMove, movableColor, shapes }: Props) {
   const el = useRef<HTMLDivElement>(null);
   const cg = useRef<Api | undefined>(undefined);
 
@@ -39,6 +44,8 @@ export function Board({ fen, orientation, turnColor, dests, lastMove, onMove, mo
       },
     });
   }, [fen, orientation, turnColor, dests, lastMove, onMove, movableColor]);
+
+  useEffect(() => { cg.current?.setAutoShapes(shapes ?? []); }, [shapes]);
 
   return <div className="board-wrap"><div ref={el} /></div>;
 }

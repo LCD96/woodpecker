@@ -11,6 +11,13 @@ export interface EngineLine {
 
 type Listener = (fen: string, lines: EngineLine[]) => void;
 
+export interface SearchOptions {
+  depth?: number;
+  multiPv?: number;
+  /** Al terminar la búsqueda (o al interrumpirla otra), con las líneas que haya */
+  onDone?: (lines: EngineLine[]) => void;
+}
+
 class Engine {
   private worker?: Worker;
   private ready = false;
@@ -20,6 +27,9 @@ class Engine {
   private pending?: string;           // FEN esperando a que termine la búsqueda anterior
   private lines: EngineLine[] = [];
   private listener?: Listener;
+  private opts: SearchOptions = {};
+  private pendingOpts: SearchOptions = {};
+  private multiPvSet = 0;
   readonly depth = 22;
   readonly multiPv = 3;
 
@@ -35,39 +45,55 @@ class Engine {
     else this.queue.push(cmd);
   }
 
-  analyse(fen: string, listener: Listener) {
+  analyse(fen: string, listener: Listener, opts: SearchOptions = {}) {
     this.boot();
     this.listener = listener;
     if (this.searching) {
+      this.pendingOpts.onDone?.([]);          // la pendiente anterior ya no se buscará
       this.pending = fen;
+      this.pendingOpts = opts;
       this.send("stop");                // al llegar "bestmove" arrancamos la pendiente
-    } else this.start(fen);
+    } else this.start(fen, opts);
+  }
+
+  /** Una búsqueda que acaba sola; resuelve con las líneas finales */
+  evaluate(fen: string, depth = 16, multiPv = 1): Promise<EngineLine[]> {
+    return new Promise((resolve) => this.analyse(fen, () => {}, { depth, multiPv, onDone: resolve }));
   }
 
   stop() {
+    this.pendingOpts.onDone?.([]);
+    this.pendingOpts = {};
     this.pending = undefined;
     this.listener = undefined;
     if (this.searching) this.send("stop");
   }
 
-  private start(fen: string) {
+  private start(fen: string, opts: SearchOptions) {
     this.current = fen;
+    this.opts = opts;
     this.lines = [];
     this.searching = true;
+    const mpv = opts.multiPv ?? this.multiPv;
+    if (mpv !== this.multiPvSet) { this.send(`setoption name MultiPV value ${mpv}`); this.multiPvSet = mpv; }
     this.send(`position fen ${fen}`);
-    this.send(`go depth ${this.depth}`);
+    this.send(`go depth ${opts.depth ?? this.depth}`);
   }
 
   private onLine(line: string) {
     if (line === "uciok") {
       this.ready = true;
-      this.send(`setoption name MultiPV value ${this.multiPv}`);
       this.queue.splice(0).forEach((c) => this.send(c));
       return;
     }
     if (line.startsWith("bestmove")) {
       this.searching = false;
-      if (this.pending) { const f = this.pending; this.pending = undefined; this.start(f); }
+      this.opts.onDone?.(this.lines.filter(Boolean));
+      if (this.pending) {
+        const f = this.pending, o = this.pendingOpts;
+        this.pending = undefined; this.pendingOpts = {};
+        this.start(f, o);
+      }
       return;
     }
     if (!line.startsWith("info") || !line.includes(" pv ") || this.pending) return;

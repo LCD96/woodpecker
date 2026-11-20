@@ -107,7 +107,7 @@ export async function syncGames(max = 50) {
  * El análisis de Lichess escribe el enroque como "rey captura torre" (e1h1, e8a8),
  * pero chess.js y el resto de la app usan la casilla de destino del rey (e1g1, e8c8).
  */
-function normalizeCastling(fen: string, uci: string) {
+export function normalizeCastling(fen: string, uci: string) {
   const from = uci.slice(0, 2), to = uci.slice(2, 4);
   const c = new Chess(fen);
   const piece = c.get(from as Square), target = c.get(to as Square);

@@ -2,7 +2,7 @@ import { useCallback, useState, type ReactNode } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { PuzzleSolver, type SolveResult } from "../components/PuzzleSolver";
 import { Card } from "../components/charts";
-import { db, type Attempt, type GameMistake, type Puzzle, type Review as ReviewRow } from "../lib/db";
+import { db, newId, type Attempt, type GameMistake, type Puzzle, type Review as ReviewRow } from "../lib/db";
 import { syncGames } from "../lib/lichess";
 import { useSettings } from "../lib/settings";
 import { fmtSec, prettyTheme } from "../lib/stats";
@@ -73,7 +73,7 @@ export function Review() {
   const current = queue?.[idx];
   const onResult = useCallback(async (r: SolveResult) => {
     if (!current) return;
-    await db.reviews.add({ kind: tab, refId: current.key, correct: r.correct, timeMs: r.timeMs, date: new Date().toISOString() });
+    await db.reviews.add({ id: newId(), kind: tab, refId: current.key, correct: r.correct, timeMs: r.timeMs, date: new Date().toISOString() });
   }, [current, tab]);
 
   if (!data || !byId) return <div className="screen"><p className="muted center">Loading…</p></div>;

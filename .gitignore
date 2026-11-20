@@ -24,3 +24,7 @@ dist-ssr
 *.sw?
 
 /data/
+
+# Dexie Cloud (npx dexie-cloud create): la URL va en la variable DEXIE_CLOUD_URL; la clave nunca se sube
+dexie-cloud.json
+*.key

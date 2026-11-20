@@ -1,9 +1,10 @@
-import { db, type Attempt, type Cycle, type GameMistake, type Puzzle, type Review, type Setting } from "./db";
+import { db, type Attempt, type Cycle, type GameMistake, type OpeningCard, type Puzzle, type Repertoire, type RepMove, type Review, type Setting } from "./db";
+import { normalize, writeAll, type RawData } from "./migrate";
 
 navigator.storage?.persist?.();
 
 export interface Backup {
-  version: 1 | 2 | 3;
+  version: 1 | 2 | 3 | 4;
   exportedAt: string;
   attempts: Attempt[];
   cycles: Cycle[];
@@ -11,6 +12,9 @@ export interface Backup {
   gameMistakes?: GameMistake[];
   settings?: Setting[];
   puzzles?: Puzzle[];          // v3: el set de puzzles, para que el ciclo sea el mismo en el otro dispositivo
+  repertoires?: Repertoire[];  // v4: aperturas
+  repMoves?: RepMove[];
+  cards?: OpeningCard[];
 }
 
 export interface BackupSummary {
@@ -21,6 +25,7 @@ export interface BackupSummary {
   reviews: number;
   gameMistakes: number;
   puzzles?: number;
+  repMoves?: number;
   lastActivity?: string;
 }
 
@@ -35,21 +40,25 @@ export function summarizeBackup(b: Omit<Backup, "version" | "exportedAt">): Back
     reviews: b.reviews?.length ?? 0,
     gameMistakes: b.gameMistakes?.length ?? 0,
     puzzles: b.puzzles?.length,
+    repMoves: b.repMoves?.length,
     lastActivity: dates.at(-1),
   };
 }
 
 export async function localBackup(): Promise<Backup> {
   return {
-    version: 3,
+    version: 4,
     exportedAt: new Date().toISOString(),
     attempts: await db.attempts.toArray(),
     cycles: await db.cycles.toArray(),
     reviews: await db.reviews.toArray(),
     gameMistakes: await db.gameMistakes.toArray(),
-    // El token de Lichess no se exporta
-    settings: (await db.settings.toArray()).filter((s) => s.key !== "lichessToken"),
+    // El token de Lichess está en localSettings y no se exporta
+    settings: await db.settings.toArray(),
     puzzles: await db.puzzles.toArray(),
+    repertoires: await db.repertoires.toArray(),
+    repMoves: await db.repMoves.toArray(),
+    cards: await db.cards.toArray(),
   };
 }
 
@@ -76,7 +85,7 @@ export async function exportData(mode: "download" | "share" = "download") {
 export async function readBackup(file: File): Promise<Backup> {
   let data: Backup;
   try { data = JSON.parse(await file.text()); } catch { throw new Error("This file isn't a Woodpecker backup"); }
-  if (![1, 2, 3].includes(data?.version) || !Array.isArray(data.attempts) || !Array.isArray(data.cycles)) {
+  if (![1, 2, 3, 4].includes(data?.version) || !Array.isArray(data.attempts) || !Array.isArray(data.cycles)) {
     throw new Error("Unsupported or damaged backup file");
   }
   // Todos los puzzles del ciclo deben existir en el set que quedará tras importar
@@ -87,21 +96,7 @@ export async function readBackup(file: File): Promise<Backup> {
   return data;
 }
 
-/** Sustituye todos los datos de este dispositivo por los de la copia */
+/** Sustituye los datos de este dispositivo (y de la nube, si hay sesión) por los de la copia */
 export async function restoreBackup(data: Backup) {
-  await db.transaction("rw", [db.attempts, db.cycles, db.reviews, db.gameMistakes, db.settings, db.puzzles], async () => {
-    const localUser = (await db.settings.get("lichessUser"))?.value;
-    await db.attempts.clear(); await db.cycles.clear();
-    await db.attempts.bulkAdd(data.attempts); await db.cycles.bulkAdd(data.cycles);
-    if (data.version >= 2) {
-      await db.reviews.clear(); await db.gameMistakes.clear();
-      await db.reviews.bulkAdd(data.reviews ?? []); await db.gameMistakes.bulkAdd(data.gameMistakes ?? []);
-      await db.settings.where("key").notEqual("lichessToken").delete();
-      await db.settings.bulkPut(data.settings ?? []);
-      // El token local solo sirve si la copia es de la misma cuenta de Lichess
-      const user = data.settings?.find((s) => s.key === "lichessUser")?.value;
-      if (!user || user !== localUser) await db.settings.delete("lichessToken");
-    }
-    if (data.puzzles?.length) { await db.puzzles.clear(); await db.puzzles.bulkAdd(data.puzzles); }
-  });
+  await writeAll(normalize(data as unknown as RawData), true);
 }
