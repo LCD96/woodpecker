@@ -375,3 +375,16 @@ input[type="checkbox"] { flex: none; width: auto; }
 /* Puzzles: el tablero se ajusta a la altura para que los botones quepan sin scroll en el móvil */
 .solver:not(.trainer) .board-wrap { max-width: min(600px, calc(100svh - 345px)); }
 @media (max-width: 600px) { .topbar { padding: 8px 16px; } main { padding-bottom: calc(64px + env(safe-area-inset-bottom)); } }
+
+/* ---------- Inicio ---------- */
+button.brand { background: none; border: 0; padding: 0; font: inherit; font-weight: 700; cursor: pointer; }
+.home-hero { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; padding: 6px 2px 2px; }
+.home-hero h1 { font-size: 22px; }
+.streak { background: rgba(213, 145, 32, 0.14); color: var(--warn); border-radius: 99px; padding: 4px 10px; font-size: 13px; font-weight: 600; white-space: nowrap; }
+.home-grid { display: grid; gap: 12px; grid-template-columns: 1fr; }
+@media (min-width: 720px) { .home-grid { grid-template-columns: repeat(3, 1fr); } }
+.home-card { justify-content: space-between; }
+.home-card > .btn { align-self: flex-start; }
+.intro h2 { font-size: 20px; }
+.intro > .btn { align-self: flex-start; }
+button.link { background: none; border: 0; padding: 0; font: inherit; color: var(--accent); text-decoration: underline; cursor: pointer; }

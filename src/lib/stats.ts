@@ -190,3 +190,14 @@ const THEME_NAMES: Record<string, string> = {
   advancedPawn: "Adv. pawn", kingsideAttack: "Kingside att.", exposedKing: "Exposed king", defensiveMove: "Defensive",
 };
 export const prettyTheme = (t: string) => THEME_NAMES[t] ?? t.replace(/([A-Z])/g, " $1").replace(/^./, (c) => c.toUpperCase());
+
+/** Errores pendientes de repaso: puzzles fallados sin un repaso correcto posterior y errores de partidas sin resolver */
+export function pendingReviews(attempts: Attempt[], reviews: Review[], mistakes: { id: string }[]) {
+  const lastFail = new Map<string, string>();
+  for (const a of attempts) if (!a.correct && a.date > (lastFail.get(a.puzzleId) ?? "")) lastFail.set(a.puzzleId, a.date);
+  const cleared = (kind: Review["kind"], id: string, since = "") =>
+    reviews.some((r) => r.kind === kind && r.refId === id && r.correct && r.date > since);
+  const puzzles = [...lastFail].filter(([id, d]) => !cleared("puzzle", id, d)).length;
+  const games = mistakes.filter((m) => !cleared("game", m.id)).length;
+  return { puzzles, games };
+}

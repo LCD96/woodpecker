@@ -3,15 +3,15 @@ import { useLiveQuery } from "dexie-react-hooks";
 import { Card } from "../components/charts";
 import { OpeningTrainer } from "../components/OpeningTrainer";
 import { RepertoireEditor } from "../components/RepertoireEditor";
-import { db } from "../lib/db";
-import { buildGraph, createRepertoire, deleteRepertoire, isMine, reachable, renameRepertoire } from "../lib/openings/repertoire";
-import { isNew, sessionCards } from "../lib/openings/srs";
+import { createRepertoire, deleteRepertoire, renameRepertoire, repertoireSummaries } from "../lib/openings/repertoire";
 import { useSettings } from "../lib/settings";
 
 type View = { kind: "list" } | { kind: "edit"; repId: string } | { kind: "train"; repId: string };
 
-export function Openings() {
-  const [view, setView] = useState<View>({ kind: "list" });
+export type OpeningsView = View;
+
+export function Openings({ initial }: { initial?: View }) {
+  const [view, setView] = useState<View>(initial ?? { kind: "list" });
   const back = () => setView({ kind: "list" });
   return (
     <div className="screen">
@@ -24,17 +24,7 @@ export function Openings() {
 
 function RepertoireList({ onEdit, onTrain }: { onEdit: (id: string) => void; onTrain: (id: string) => void }) {
   const { newCardsPerDay } = useSettings();
-  const data = useLiveQuery(async () => {
-    const [reps, moves, cards] = await Promise.all([db.repertoires.toArray(), db.repMoves.toArray(), db.cards.toArray()]);
-    return reps.sort((a, b) => a.created.localeCompare(b.created)).map((rep) => {
-      const g = buildGraph(rep, moves.filter((m) => m.repId === rep.id));
-      const live = reachable(g);
-      const mineAt = new Set(g.moves.filter((m) => isMine(rep, m.from)).map((m) => m.from));
-      const repCards = cards.filter((c) => c.repId === rep.id && live.has(c.pos) && mineAt.has(c.pos));
-      const { due, fresh } = sessionCards(repCards, cards, newCardsPerDay);
-      return { rep, moves: g.moves.length, positions: repCards.length, unseen: repCards.filter(isNew).length, due: due.length, fresh: fresh.length };
-    });
-  }, [newCardsPerDay]);
+  const data = useLiveQuery(() => repertoireSummaries(newCardsPerDay), [newCardsPerDay]);
   const [name, setName] = useState("");
   const [color, setColor] = useState<"white" | "black">("white");
 

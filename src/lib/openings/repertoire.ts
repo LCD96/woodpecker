@@ -3,7 +3,7 @@
 
 import { db, newId, type Repertoire, type RepMove } from "../db";
 import { START_FEN, play, posKey, turnOf } from "./chess";
-import { cardId, newCard } from "./srs";
+import { cardId, isNew, newCard, sessionCards } from "./srs";
 
 export const START = posKey(START_FEN);
 
@@ -134,3 +134,16 @@ export async function deleteMoves(rep: Repertoire, ids: string[]) {
 
 export const setComment = (id: string, comment: string) => db.repMoves.update(id, { comment: comment.trim() || undefined });
 export const renameRepertoire = (id: string, name: string) => db.repertoires.update(id, { name });
+
+/** Resumen de cada repertorio para listas: jugadas, posiciones, pendientes de hoy y nuevas */
+export async function repertoireSummaries(newPerDay: number) {
+  const [reps, moves, cards] = await Promise.all([db.repertoires.toArray(), db.repMoves.toArray(), db.cards.toArray()]);
+  return reps.sort((a, b) => a.created.localeCompare(b.created)).map((rep) => {
+    const g = buildGraph(rep, moves.filter((m) => m.repId === rep.id));
+    const live = reachable(g);
+    const mineAt = new Set(g.moves.filter((m) => isMine(rep, m.from)).map((m) => m.from));
+    const repCards = cards.filter((c) => c.repId === rep.id && live.has(c.pos) && mineAt.has(c.pos));
+    const { due, fresh } = sessionCards(repCards, cards, newPerDay);
+    return { rep, moves: g.moves.length, positions: repCards.length, unseen: repCards.filter(isNew).length, due: due.length, fresh: fresh.length };
+  });
+}

@@ -99,7 +99,7 @@ export function Train() {
 }
 
 const fmtMin = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${Math.round(m % 60)} min` : `${Math.round(m)} min`);
-const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+const fmtDate = (t: number) => new Date(t).toLocaleDateString("en-US", { weekday: "short", day: "numeric", month: "short" });
 
 function CycleInfo({ cycle, pace }: { cycle: Cycle; pace: Awaited<ReturnType<typeof ritmo>> }) {
   const total = pace.hechos + pace.restantes;
