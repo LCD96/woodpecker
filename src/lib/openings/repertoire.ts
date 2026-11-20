@@ -117,9 +117,12 @@ export async function addMoves(rep: Repertoire, moves: NewMove[], onlyMainForMe 
 }
 
 /** Borra una jugada y todo lo que deja de ser alcanzable desde la posición inicial */
-export async function deleteMove(rep: Repertoire, id: string) {
+export const deleteMove = (rep: Repertoire, id: string) => deleteMoves(rep, [id]);
+
+/** Borra jugadas y todo lo que solo se alcanzaba a través de ellas */
+export async function deleteMoves(rep: Repertoire, ids: string[]) {
   await db.transaction("rw", db.repMoves, db.cards, async () => {
-    await db.repMoves.delete(id);
+    await db.repMoves.bulkDelete(ids);
     const g = buildGraph(rep, await db.repMoves.where("repId").equals(rep.id).toArray());
     const live = reachable(g);
     await db.repMoves.bulkDelete(g.moves.filter((m) => !live.has(m.from)).map((m) => m.id));

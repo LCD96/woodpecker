@@ -10,6 +10,9 @@ import { explore, levelSource, shareOf, total, type ExplorerResult, type Source 
 import type { Graph } from "./repertoire";
 
 export type Label = "?!" | "?" | "??";
+export type Annotation = "!!" | "!" | "!?";
+
+export interface Badge { text: string; tone: "good" | "bad" | "info"; title?: string; }
 
 export interface MoveRow {
   uci: string;
@@ -25,6 +28,11 @@ export interface MoveRow {
   /** Probabilidad de victoria perdida frente a la mejor jugada (0..1), para quien mueve */
   loss?: number;
   label?: Label;
+  /** Jugadas buenas poco jugadas o que puntúan mucho mejor que la media */
+  annotation?: Annotation;
+  /** Puntuación (0..1) de quien mueve con esta jugada, si hay partidas suficientes */
+  score?: number;
+  badges: Badge[];
   commonMistake: boolean;
   engineRank?: number;
   inRep: boolean;
@@ -125,8 +133,16 @@ function buildRows(fen: string, d: Omit<Report, "rows">, childEvals: Map<string,
   const repHere = new Set((g.byFrom.get(key) ?? []).map((m) => m.uci));
   const repPositions = new Set([...g.moves.map((m) => m.to), ...g.byFrom.keys()]);
   const opponentTurn = mover !== g.rep.color;
+  // Puntuación de quien mueve: media de la posición y mínimo de partidas para fiarse de una jugada
+  const scoreOf = (r: { white: number; draws: number; black: number }) => {
+    const n = total(r);
+    return n ? ((mover === "white" ? r.white : r.black) + r.draws / 2) / n : 0;
+  };
+  const avg = level && total(level) ? scoreOf(level) : undefined;
+  const minGames = d.source === "lichess" ? 50 : 20;
+  const p = (x: number) => `${Math.round(x * 100)}%`;
 
-  const ucis = [...new Set([...(level?.moves ?? []).map((m) => m.uci), ...(d.masters?.moves ?? []).map((m) => m.uci), ...lines.map((l) => l.uci)])];
+  const ucis = [...new Set([...(level?.moves ?? []).map((m) => m.uci), ...(d.masters?.moves ?? []).map((m) => m.uci), ...lines.map((l) => l.uci), ...repHere])];
   const rows = ucis.flatMap((uci): MoveRow[] => {
     const after = play(fen, uci);
     if (!after) return [];
@@ -138,16 +154,52 @@ function buildRows(fen: string, d: Omit<Report, "rows">, childEvals: Map<string,
     const label = labelFor(loss);
     const levelShare = level && total(level) ? (lm ? total(lm) / total(level) : 0) : undefined;
     const r = lm ?? mm;
+    const commonMistake = opponentTurn && (label === "?" || label === "??") && (levelShare ?? 0) >= 0.03;
+    const transposes = !repHere.has(uci) && repPositions.has(posKey(after.fen));
+
+    // Lo que dice la práctica frente a la media de la posición
+    const score = r && total(r) >= minGames ? scoreOf(r) : undefined;
+    const diff = score !== undefined && avg !== undefined ? score - avg : 0;
+    const share = levelShare ?? 0;
+    const sound = loss !== undefined && loss <= 0.03;
+    const vs = score !== undefined && avg !== undefined ? `${p(score)} vs ${p(avg)} on average` : "";
+    const badges: Badge[] = [];
+    let annotation: Annotation | undefined;
+    if (commonMistake) badges.push({ text: "Common mistake", tone: "good", title: "Your opponents play it often and it loses ground: be ready to punish it" });
+    if (!opponentTurn) {
+      if (sound && share < 0.08 && diff >= 0.07) {
+        annotation = "!!";
+        badges.push({ text: "Hidden gem", tone: "good", title: `Rarely played at your level, sound according to the engine, and it scores ${vs}` });
+      } else if (sound && diff >= 0.05) {
+        annotation = "!";
+        badges.push({ text: "Scores well", tone: "good", title: `Sound according to the engine and it scores ${vs}` });
+      } else if (score !== undefined && diff <= -0.07) {
+        badges.push({ text: "Often goes wrong", tone: "bad", title: `Players who choose it score only ${vs}` });
+      }
+    } else if (score !== undefined) {
+      if (diff >= 0.07) {
+        if (sound && share < 0.08) annotation = "!?";
+        badges.push({
+          text: label === "?" || label === "??" ? "Trap: scores well despite the eval" : sound && share < 0.08 ? "Surprise weapon" : "Dangerous for you",
+          tone: "bad", title: `Your opponents score ${vs} with it: prepare an answer`,
+        });
+      } else if (diff <= -0.07 && !commonMistake) {
+        badges.push({ text: "Good for you", tone: "good", title: `Your opponents score only ${vs} with it` });
+      }
+    }
+    if (transposes) badges.push({ text: "Transposes to your repertoire", tone: "good" });
+    if (!opponentTurn && rank === 0) badges.push({ text: "Engine's choice", tone: "info" });
+
     return [{
       uci, san: after.san,
       games: lm ? total(lm) : 0, white: r?.white ?? 0, draws: r?.draws ?? 0, black: r?.black ?? 0,
       levelShare,
       mastersShare: d.masters && total(d.masters) ? (mm ? total(mm) / total(d.masters) : 0) : undefined,
-      eval: ev, loss, label,
-      commonMistake: opponentTurn && (label === "?" || label === "??") && (levelShare ?? 0) >= 0.03,
+      eval: ev, loss, label, annotation, score, badges,
+      commonMistake,
       engineRank: rank >= 0 ? rank : undefined,
       inRep: repHere.has(uci),
-      transposes: !repHere.has(uci) && repPositions.has(posKey(after.fen)),
+      transposes,
       seenEvery: opponentTurn && d.reach && levelShare ? 1 / (d.reach * levelShare) : undefined,
     }];
   });

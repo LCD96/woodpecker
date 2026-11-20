@@ -21,3 +21,13 @@
   font-size: 10px;
   font-weight: 600;
 }
+
+/* chessground coloca las letras con left: 24px fijo y centradas: en tableros pequeños quedan corridas a la derecha.
+   Como en lichess: letras en la esquina inferior derecha de cada casilla y números en la superior izquierda. */
+.board-wrap coords.files { left: 0; bottom: 0; height: auto; }
+.board-wrap coords.files coord { flex: 1 1 0; text-align: right; padding-right: 2px; line-height: 1.2; }
+.board-wrap coords.ranks { left: 2px; top: 0; }
+.board-wrap coords.ranks coord { flex: 1 1 0; transform: none; line-height: 1.4; }
+.board-wrap coords { opacity: 1; font-weight: 700; }
+.board-wrap coord.coord-light { color: #b58863; }
+.board-wrap coord.coord-dark { color: #f0d9b5; }

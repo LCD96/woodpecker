@@ -76,6 +76,20 @@ export function minutesToday(attempts: Attempt[], reviews: Review[]) {
   return [...attempts, ...reviews].filter((x) => dayKey(x.date) === today).reduce((s, x) => s + x.timeMs, 0) / 60000;
 }
 
+/** Minutos de hoy por actividad y puzzles del ciclo resueltos hoy */
+export function todayBreakdown(attempts: Attempt[], reviews: Review[]) {
+  const today = dayKey(new Date());
+  const a = attempts.filter((x) => dayKey(x.date) === today);
+  const r = reviews.filter((x) => dayKey(x.date) === today);
+  const min = (xs: { timeMs: number }[]) => xs.reduce((s, x) => s + x.timeMs, 0) / 60000;
+  return {
+    total: min(a) + min(r),
+    puzzles: min(a), puzzlesCount: a.length,
+    review: min(r.filter((x) => x.kind !== "opening")),
+    openings: min(r.filter((x) => x.kind === "opening")),
+  };
+}
+
 /** Días seguidos (hasta hoy, o ayer si hoy aún no se ha cumplido) alcanzando el objetivo */
 export function goalStreak(attempts: Attempt[], reviews: Review[], goalMin: number) {
   const ms = new Map<string, number>();

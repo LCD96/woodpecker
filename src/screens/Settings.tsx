@@ -84,6 +84,11 @@ export function Settings() {
           <input type="number" min={0} max={200} value={s.newCardsPerDay}
                  onChange={(e) => { const v = +e.target.value; if (v >= 0) setSetting("newCardsPerDay", v); }} />
         </label>
+        <label className="field">
+          <input type="checkbox" checked={s.openingBonus} onChange={(e) => setSetting("openingBonus", e.target.checked)} />
+          Bonus moves
+        </label>
+        <p className="small muted">Now and then your opponent plays a common or dangerous move you haven't prepared, to see if you find a good answer. It doesn't affect your review schedule.</p>
       </Card>
 
       {msg && <p className="callout info">{msg}</p>}

@@ -139,3 +139,22 @@ export function Radar({ series, size = 340 }: { series: RadarSeries[]; size?: nu
     </div>
   );
 }
+
+/** Anillo pequeño con el porcentaje; al pulsarlo despliega `children` con el detalle */
+export function Ring({ value, max, label, open, onToggle, children }:
+  { value: number; max: number; label: string; open: boolean; onToggle: () => void; children: ReactNode }) {
+  const pct = max > 0 ? Math.min(1, value / max) : 0;
+  const r = 13, c = 2 * Math.PI * r;
+  return (
+    <div className="ring-wrap">
+      <button className={`ring ${open ? "on" : ""}`} onClick={onToggle} aria-expanded={open} aria-label={`${label}: ${Math.round(pct * 100)}%`}>
+        <svg viewBox="0 0 32 32" aria-hidden>
+          <circle cx="16" cy="16" r={r} className="ring-bg" />
+          <circle cx="16" cy="16" r={r} className={`ring-fill ${pct >= 1 ? "done" : ""}`} strokeDasharray={`${pct * c} ${c}`} transform="rotate(-90 16 16)" />
+        </svg>
+        <span className="ring-text"><span className="ring-pct">{Math.floor(pct * 100)}%</span><span className="ring-label">{label}</span></span>
+      </button>
+      {open && <div className="popover" role="dialog">{children}</div>}
+    </div>
+  );
+}

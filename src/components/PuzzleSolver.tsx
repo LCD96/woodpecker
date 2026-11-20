@@ -11,7 +11,7 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { Chess, type Square } from "chess.js";
 import { Board } from "./Board";
-import { EvalBar, ExplorerControls } from "./Explorer";
+import { EngineLines, EvalBar, ExplorerControls, LichessLink, MoveStrip } from "./Explorer";
 import { useExplorer } from "../lib/useExplorer";
 import type { Puzzle } from "../lib/db";
 import { PuzzleRun, parseUci } from "../lib/puzzle";
@@ -138,6 +138,7 @@ export function PuzzleSolver({ puzzle, onResult, onNext, failHint }: Props) {
     <div className="solver">
       <div className="solver-top">
         <p className="solver-msg">{message}</p>
+        {finished ? <MoveStrip ex={ex} /> : <span className="grow" />}
         <span className={`clock ${status === "playing" ? "running" : ""}`}>⏱ {fmtClock(elapsed)}</span>
       </div>
 
@@ -152,7 +153,7 @@ export function PuzzleSolver({ puzzle, onResult, onNext, failHint }: Props) {
         onMove={finished ? ex.onMove : onMove}
         movableColor={finished ? "both" : undefined}
       />
-      {finished && <ExplorerControls ex={ex} orientation={run.orientation} />}
+      {finished && <ExplorerControls ex={ex} />}
 
       <div className="solver-bar">
         {wrong && <p className="small">You played <strong className="bad">{wrong.played}</strong> · the solution was <strong className="good">{wrong.correct}</strong></p>}
@@ -168,6 +169,8 @@ export function PuzzleSolver({ puzzle, onResult, onNext, failHint }: Props) {
           </div>
         )}
       </div>
+      {finished && <EngineLines ex={ex} />}
+      {finished && <LichessLink fen={ex.fen} orientation={run.orientation} />}
     </div>
   );
 }

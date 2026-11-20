@@ -6,12 +6,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { useLiveQuery } from "dexie-react-hooks";
 import { PuzzleSolver, type SolveResult } from "../components/PuzzleSolver";
-import { Progress } from "../components/charts";
+import { Ring } from "../components/charts";
 import { db, newId, type Cycle, type Puzzle } from "../lib/db";
 import { useSync } from "../lib/sync";
 import { PLAZOS, currentCycle, finishCycle, nextPuzzleId, ritmo, startNextCycle } from "../lib/cycles";
 import { useSettings } from "../lib/settings";
-import { minutesToday } from "../lib/stats";
+import { todayBreakdown } from "../lib/stats";
 
 export function Train() {
   const cycle = useLiveQuery(async () => (await currentCycle()) ?? null, []);
@@ -20,7 +20,9 @@ export function Train() {
   const [pace, setPace] = useState<Awaited<ReturnType<typeof ritmo>>>();
   const { dailyGoalMin } = useSettings();
   const sync = useSync();
-  const today = useLiveQuery(async () => minutesToday(await db.attempts.toArray(), await db.reviews.toArray()), [], 0);
+  const today = useLiveQuery(async () => todayBreakdown(await db.attempts.toArray(), await db.reviews.toArray()));
+  const [open, setOpen] = useState<"cycle" | "today">();
+  const toggle = (w: "cycle" | "today") => setOpen(open === w ? undefined : w);
 
   const loadNext = useCallback(async (c: Cycle) => {
     setPace(await ritmo(c));
@@ -65,15 +67,21 @@ export function Train() {
   return (
     <div className="screen train">
       <div className="train-head">
-        <div className="train-meta">
-          <span className="pill">Cycle {cycle?.n ?? "…"}</span>
-          {pace && <span className="muted small">{pace.hechos}/{total} · ~{pace.porDia}/day · {pace.diasRestantes}d left</span>}
-          {puzzle && <span className="muted small">★ {puzzle.rating}</span>}
-        </div>
-        {pace && <Progress value={pace.hechos} max={total} />}
-        <Progress value={today} max={dailyGoalMin}
-                  label={<><span>Today</span><span>{Math.floor(today)} / {dailyGoalMin} min</span></>} />
+        <span className="pill">Cycle {cycle?.n ?? "…"}</span>
+        {puzzle && <span className="muted small">★ {puzzle.rating}</span>}
+        <span className="grow" />
+        {pace && cycle && (
+          <Ring value={pace.hechos} max={total} label={`${pace.hechos}/${total}`} open={open === "cycle"} onToggle={() => toggle("cycle")}>
+            <CycleInfo cycle={cycle} pace={pace} />
+          </Ring>
+        )}
+        {today && (
+          <Ring value={today.total} max={dailyGoalMin} label="today" open={open === "today"} onToggle={() => toggle("today")}>
+            <TodayInfo today={today} goal={dailyGoalMin} />
+          </Ring>
+        )}
       </div>
+      {open && <div className="popover-scrim" onClick={() => setOpen(undefined)} />}
 
       {puzzle && cycle && (
         <PuzzleSolver key={`${cycle.n}-${puzzle.id}`} puzzle={puzzle} onResult={onResult} onNext={() => loadNext(cycle)} />
@@ -87,5 +95,48 @@ export function Train() {
       )}
       {!puzzle && !done && <p className="muted center">Loading…</p>}
     </div>
+  );
+}
+
+const fmtMin = (m: number) => (m >= 60 ? `${Math.floor(m / 60)} h ${Math.round(m % 60)} min` : `${Math.round(m)} min`);
+const fmtDate = (t: number) => new Date(t).toLocaleDateString(undefined, { weekday: "short", day: "numeric", month: "short" });
+
+function CycleInfo({ cycle, pace }: { cycle: Cycle; pace: Awaited<ReturnType<typeof ritmo>> }) {
+  const total = pace.hechos + pace.restantes;
+  const late = pace.finEstimado !== undefined && pace.finEstimado > pace.fin;
+  const daysLate = pace.finEstimado !== undefined ? Math.ceil((pace.finEstimado - pace.fin) / 86400000) : 0;
+  return (
+    <>
+      <h3>Cycle {cycle.n}</h3>
+      <p><strong>{pace.hechos}</strong> of {total} puzzles · <strong>{Math.round((pace.hechos / (total || 1)) * 100)}%</strong></p>
+      {pace.acierto !== undefined && <p className="small">First-try accuracy: <strong>{Math.round(pace.acierto * 100)}%</strong></p>}
+      <p className="small">Deadline {fmtDate(pace.fin)} · {pace.diasRestantes} day{pace.diasRestantes === 1 ? "" : "s"} left</p>
+      <p className="small">Needed from now: <strong>~{pace.porDia}</strong> puzzles/day</p>
+      <p className="small">Your pace so far: <strong>{pace.ritmoReal.toFixed(1)}</strong> puzzles/day</p>
+      {pace.restantes > 0 && pace.hechos >= 10 && pace.finEstimado !== undefined && (
+        <p className={`small ${late ? "warn" : "good"}`}>
+          At this pace you'll finish on {fmtDate(pace.finEstimado)}{late ? `, ${daysLate} day${daysLate === 1 ? "" : "s"} after the deadline.` : ", in time."}
+        </p>
+      )}
+    </>
+  );
+}
+
+function TodayInfo({ today, goal }: { today: ReturnType<typeof todayBreakdown>; goal: number }) {
+  const left = goal - today.total;
+  return (
+    <>
+      <h3>Today</h3>
+      <p><strong>{fmtMin(today.total)}</strong> of {goal} min · <strong>{Math.floor((today.total / goal) * 100)}%</strong> of your goal</p>
+      <p className="small">{left > 0 ? <>{fmtMin(left)} to go</> : <span className="good">Goal reached ✓</span>}</p>
+      <table className="kv small">
+        <tbody>
+          <tr><td>Puzzles ({today.puzzlesCount})</td><td>{fmtMin(today.puzzles)}</td></tr>
+          <tr><td>Review</td><td>{fmtMin(today.review)}</td></tr>
+          <tr><td>Openings</td><td>{fmtMin(today.openings)}</td></tr>
+        </tbody>
+      </table>
+      <p className="tiny muted">Only solving time counts, not time on other screens.</p>
+    </>
   );
 }

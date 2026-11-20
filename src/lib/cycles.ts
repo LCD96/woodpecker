@@ -34,9 +34,21 @@ export async function nextPuzzleId(c: Cycle) {
 }
 
 export async function ritmo(c: Cycle) {
-  const hechos = new Set((await db.attempts.where("cycle").equals(c.n).toArray()).map((a) => a.puzzleId)).size;
+  const intentos = await db.attempts.where("cycle").equals(c.n).toArray();
+  const primeros = new Map<string, boolean>();
+  for (const a of intentos) if (!primeros.has(a.puzzleId)) primeros.set(a.puzzleId, a.correct);
+  const hechos = primeros.size;
   const restantes = c.order.length - hechos;
-  const fin = new Date(c.start).getTime() + c.targetDays * 86400000;
+  const inicio = new Date(c.start).getTime();
+  const fin = inicio + c.targetDays * 86400000;
   const diasRestantes = Math.max(1, Math.ceil((fin - Date.now()) / 86400000));
-  return { hechos, restantes, diasRestantes, porDia: Math.ceil(restantes / diasRestantes) };
+  // Ritmo real: puzzles por día desde que empezó el ciclo (el primer día cuenta entero)
+  const diasPasados = Math.max(1, (Date.now() - inicio) / 86400000);
+  const ritmoReal = hechos / diasPasados;
+  const finEstimado = ritmoReal > 0 ? Date.now() + (restantes / ritmoReal) * 86400000 : undefined;
+  return {
+    hechos, restantes, diasRestantes, porDia: Math.ceil(restantes / diasRestantes),
+    ritmoReal, finEstimado, fin,
+    acierto: hechos ? [...primeros.values()].filter(Boolean).length / hechos : undefined,
+  };
 }

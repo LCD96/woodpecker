@@ -6,7 +6,7 @@ import { fmtLine } from "../lib/openings/evals";
 import { total, type ExplorerResult } from "../lib/openings/explorer";
 import type { MoveRow, Report } from "../lib/openings/report";
 
-const NAG = { "?!": "inaccuracy", "?": "mistake", "??": "blunder" } as const;
+const NAG = { "?!": "inaccuracy", "?": "mistake", "??": "blunder", "!!": "brilliant", "!": "good-move", "!?": "interesting" } as const;
 const pct = (x?: number) => (x === undefined ? "—" : x < 0.01 && x > 0 ? "<1%" : `${Math.round(x * 100)}%`);
 const fmtGames = (n: number) => (n >= 1e6 ? `${(n / 1e6).toFixed(1)}M` : n >= 1e4 ? `${Math.round(n / 1000)}k` : n.toLocaleString("en-US"));
 
@@ -48,10 +48,11 @@ interface Props {
   mine: boolean;
   onGo: (uci: string) => void;
   onAdd: (uci: string) => void;
+  onRemove: (uci: string) => void;
   onHover: (uci?: string) => void;
 }
 
-export function MoveTable({ report, levelLabel, color, mine, onGo, onAdd, onHover }: Props) {
+export function MoveTable({ report, levelLabel, color, mine, onGo, onAdd, onRemove, onHover }: Props) {
   const [all, setAll] = useState(false);
   if (!report) return <section className="panel"><h3>Moves</h3><p className="small muted">Loading…</p></section>;
   const Color = color === "white" ? "White" : "Black";
@@ -88,16 +89,16 @@ export function MoveTable({ report, levelLabel, color, mine, onGo, onAdd, onHove
             </thead>
             <tbody>
               {shown.map((r) => (
-                <tr key={r.uci} className={r.inRep ? "in-rep" : ""} onMouseEnter={() => onHover(r.uci)} onMouseLeave={() => onHover(undefined)}>
+                <tr key={r.uci} className={`${r.inRep ? "in-rep" : ""} ${r.annotation === "!!" ? "gem" : ""}`} onMouseEnter={() => onHover(r.uci)} onMouseLeave={() => onHover(undefined)}>
                   <td>
                     <button className="mv" onClick={() => onGo(r.uci)}>
-                      <strong>{r.san}</strong>{r.label && <span className={`nag ${NAG[r.label]}`}>{r.label}</span>}
+                      <strong>{r.san}</strong>
+                      {r.label && <span className={`nag ${NAG[r.label]}`}>{r.label}</span>}
+                      {r.annotation && !r.label && <span className={`nag ${NAG[r.annotation]}`}>{r.annotation}</span>}
                     </button>
-                    {(r.commonMistake || r.transposes || (mine && r.engineRank === 0)) && (
+                    {r.badges.length > 0 && (
                       <div className="badges">
-                        {r.commonMistake && <span className="badge bad">Common mistake</span>}
-                        {r.transposes && <span className="badge good">Transposes to your repertoire</span>}
-                        {mine && r.engineRank === 0 && <span className="badge">Engine's choice</span>}
+                        {r.badges.map((b) => <span key={b.text} className={`badge ${b.tone}`} title={b.title}>{b.text}</span>)}
                       </div>
                     )}
                   </td>
@@ -110,8 +111,9 @@ export function MoveTable({ report, levelLabel, color, mine, onGo, onAdd, onHove
                       {r.seenEvery ? <><strong>{Math.round(r.seenEvery).toLocaleString("en-US")}</strong> <span className="muted games-word">games</span></> : "—"}
                     </td>
                   )}
-                  <td>{r.inRep ? <span className="good" title="In your repertoire">✓</span>
-                    : <button className="btn small" onClick={() => onAdd(r.uci)} aria-label={`Add ${r.san}`}>+</button>}</td>
+                  <td>{r.inRep
+                    ? <button className="btn small rep-toggle" onClick={() => onRemove(r.uci)} title={`Remove ${r.san} from your repertoire`} aria-label={`Remove ${r.san}`}><span className="yes">✓</span><span className="no">✕</span></button>
+                    : <button className="btn small" onClick={() => onAdd(r.uci)} title={`Add ${r.san} to your repertoire`} aria-label={`Add ${r.san}`}>+</button>}</td>
                 </tr>
               ))}
             </tbody>

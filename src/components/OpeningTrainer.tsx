@@ -8,21 +8,36 @@
 //    - otra jugada que no empeora la evaluación más de la tolerancia → "también vale, prueba otra vez" (sin castigo)
 //    - jugada que empeora → incorrecto: se ve cómo te castiga el rival y luego hay que jugar la buena
 // 4. Al acabar una línea se vuelve al inicio hasta vaciar la cola.
+// 5. Jugada extra: de vez en cuando, en una posición del rival, este juega algo habitual que no tienes preparado.
+//    Tu respuesta se juzga con el motor; no cuenta para el calendario de repaso. Luego se sigue por donde iba.
 
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { Chess } from "chess.js";
 import { Board, type DrawShape } from "./Board";
+import { ScrollStrip } from "./Explorer";
 import { db, newId, type OpeningCard, type RepMove } from "../lib/db";
 import { START_FEN, boardUci, dests, lineSan, play, posKey, turnOf, uciPair } from "../lib/openings/chess";
 import { fmtLine, getEval, winChance } from "../lib/openings/evals";
 import { addMoves, isMine, loadGraph, pathTo, reachable, type Graph } from "../lib/openings/repertoire";
+import { BONUS_CHANCE, pickBonus, type Bonus } from "../lib/openings/bonus";
 import { grade, isNew, Rating, sessionCards, type Grade } from "../lib/openings/srs";
 import { useSettings } from "../lib/settings";
 
 const STEP = 450;            // pausa entre jugadas automáticas
 const REFUTE_STEP = 800;
 
-type Phase = "loading" | "auto" | "ask" | "checking" | "refuting" | "wrong" | "fix" | "done";
+type Phase = "loading" | "auto" | "ask" | "checking" | "refuting" | "wrong" | "fix" | "done" | "bonus" | "bonusCheck" | "bonusDone";
+
+/** Respuestas normales entre dos jugadas extra */
+const BONUS_GAP = 3;
+
+interface BonusState {
+  /** Posición antes de la jugada del rival, para seguir después */
+  from: string;
+  b: Bonus;
+  t0: number;
+  result?: { played?: { uci: string; san: string }; ok?: boolean; best?: { uci: string; san: string; eval: string } };
+}
 
 interface Ask {
   card: OpeningCard;
@@ -49,11 +64,14 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
   const [score, setScore] = useState({ done: 0, correct: 0, total: 0 });
   const [unreachable, setUnreachable] = useState(0);
   const [altMove, setAltMove] = useState<{ fen: string; uci: string; san: string }>();
+  const [bonus, setBonus] = useState<BonusState>();
+  const [bonusAdded, setBonusAdded] = useState(false);
 
   const queue = useRef(new Set<string>());
   const cards = useRef(new Map<string, OpeningCard>());
   const g = useRef<Graph | undefined>(undefined);
   const timers = useRef<number[]>([]);
+  const bonusRef = useRef({ on: true, seen: new Set<string>(), used: 0, since: 0, max: 1 });
   const later = (f: () => void, ms: number) => { timers.current.push(window.setTimeout(f, ms)); };
   useEffect(() => () => timers.current.forEach(clearTimeout), []);
 
@@ -83,7 +101,9 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
     if (path?.length) {
       const m = path[0];
       setPhase("auto");
-      later(() => {
+      later(async () => {
+        const b = await maybeBonus(gr, f);
+        if (b) { startBonus(f, b); return; }
         const r = play(f, m.uci)!;
         setFen(r.fen); setLastMove(uciPair(m.uci)); setLine((l) => [...l, m.san]);
         pushNote(m);
@@ -103,6 +123,69 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
     }, 900);
   }
 
+  // ---------- Jugada extra ----------
+
+  async function maybeBonus(gr: Graph, f: string) {
+    const st = bonusRef.current, key = posKey(f);
+    if (!st.on || turnOf(f) === gr.rep.color || st.seen.has(key) || st.since < BONUS_GAP || st.used >= st.max) return;
+    st.seen.add(key);                       // una sola tirada por posición: si no, saldría siempre en las primeras jugadas
+    if (Math.random() > BONUS_CHANCE) return;
+    return pickBonus(gr, f).catch(() => undefined);
+  }
+
+  function startBonus(from: string, b: Bonus) {
+    const st = bonusRef.current;
+    st.used++; st.since = 0;
+    setFen(b.fen); setLastMove(uciPair(b.uci)); setLine((l) => [...l, b.san]);
+    setBonus({ from, b, t0: performance.now() });
+    setBonusAdded(false);
+    setMsg(<span><span className="accent">Bonus move</span> · {b.san} isn't in your repertoire. What would you play?</span>);
+    setPhase("bonus");
+  }
+
+  const answerBonus = async (bs: BonusState, played?: { uci: string; san: string; fen: string }) => {
+    setPhase("bonusCheck");
+    setMsg(<span className="muted">{played ? `Checking ${played.san}…` : "Asking the engine…"}</span>);
+    const [verdict, e] = await Promise.all([
+      played ? judge(bs.b.fen, played.fen, played.uci).catch(() => undefined) : undefined,
+      getEval(bs.b.fen, 5).catch(() => undefined),
+    ]);
+    const top = e?.lines[0];
+    const best = top && { uci: top.uci, san: play(bs.b.fen, top.uci)?.san ?? top.uci, eval: fmtLine(top) };
+    const ok = played && verdict ? verdict.loss <= settings.openingTolerance : undefined;
+    await db.reviews.add({
+      id: newId(), kind: "opening", refId: `bonus:${posKey(bs.b.fen)}`, correct: !!ok,
+      timeMs: performance.now() - bs.t0, date: new Date().toISOString(),
+    });
+    setFen(bs.b.fen); setLastMove(uciPair(bs.b.uci));
+    setBonus({ ...bs, result: { played, ok, best } });
+    const other = best && played && best.uci !== played.uci;
+    setMsg(!played ? <span>The engine suggests <strong>{best?.san ?? "—"}</strong>{best && <> ({best.eval})</>}</span>
+      : !verdict ? <span className="muted">{played.san}: couldn't check it{best && <> · the engine suggests <strong>{best.san}</strong></>}</span>
+      : ok ? <span className="good">✓ {played.san} is a good answer ({verdict.playedEval}){other && <span className="muted"> · engine: {best.san} ({best.eval})</span>}</span>
+      : <span><span className="bad">✗ {played.san}</span> {verdict.bestEval} → {verdict.playedEval}{best && <> · better: <strong className="good">{best.san}</strong></>}</span>);
+    setPhase("bonusDone");
+  };
+
+  const bonusAnswer = bonus?.result?.ok ? bonus.result.played : bonus?.result?.best;
+  const addBonus = async () => {
+    const gr = g.current;
+    if (!gr || !bonus || !bonusAnswer) return;
+    await addMoves(gr.rep, [{ from: bonus.from, uci: bonus.b.uci }, { from: bonus.b.fen, uci: bonusAnswer.uci }]);
+    const ng = await loadGraph(repId);
+    if (ng) { g.current = ng; setGraph(ng); }
+    setBonusAdded(true);
+  };
+
+  const endBonus = () => {
+    const bs = bonus;
+    if (!bs) return;
+    setBonus(undefined); setMsg(undefined);
+    setFen(bs.from); setLastMove(undefined); setLine((l) => l.slice(0, -1));
+    setPhase("auto");
+    later(() => step(bs.from), STEP);
+  };
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
@@ -119,6 +202,7 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
       queue.current = new Set([...due, ...fresh].map((c) => c.pos));
       setGraph(gr);
       setScore({ done: 0, correct: 0, total: queue.current.size });
+      bonusRef.current = { on: settings.openingBonus, seen: new Set(), used: 0, since: 0, max: Math.max(1, Math.round(queue.current.size / 6)) };
       step(START_FEN);
     })();
     return () => { cancelled = true; };
@@ -130,6 +214,7 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
 
   const finish = async (a: Ask, rating: Grade | undefined) => {
     queue.current.delete(a.card.pos);
+    bonusRef.current.since++;
     if (rating !== undefined) cards.current.set(a.card.pos, await grade(a.card, rating));
     await db.reviews.add({
       id: newId(), kind: "opening", refId: a.card.id, correct: !a.wrong,
@@ -148,6 +233,13 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
   };
 
   const onMove = useCallback(async (from: string, to: string) => {
+    if (phase === "bonus" && bonus) {
+      const r = play(bonus.b.fen, boardUci(bonus.b.fen, from, to));
+      if (!r) return;
+      setFen(r.fen); setLastMove([from, to]);
+      await answerBonus(bonus, r);
+      return;
+    }
     const gr = g.current;
     if (!gr || !ask || (phase !== "ask" && phase !== "fix")) return;
     const own = ownMoves(gr, ask.fen);
@@ -213,7 +305,7 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
       setPhase("wrong");
     }, REFUTE_STEP * (seq.length + 1));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ask, phase, settings.openingTolerance]);
+  }, [ask, bonus, phase, settings.openingTolerance]);
 
   const retry = () => {
     if (!ask) return;
@@ -242,13 +334,21 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
 
   const own = useMemo(() => (graph && ask ? ownMoves(graph, ask.fen) : []), [graph, ask]);
   const shapes = useMemo<DrawShape[]>(() => {
+    const br = bonus?.result;
+    if (phase === "bonusDone" && br) {
+      const arrow = (u: string, brush: string) => ({ orig: u.slice(0, 2), dest: u.slice(2, 4), brush }) as DrawShape;
+      return [
+        ...(br.best ? [arrow(br.best.uci, "green")] : []),
+        ...(br.played && br.played.uci !== br.best?.uci ? [arrow(br.played.uci, br.ok ? "blue" : "red")] : []),
+      ];
+    }
     if (!ask || !own.length || (phase !== "ask" && phase !== "fix")) return [];
     if (ask.hint === 2 || ask.fresh) return own.map((m) => ({ orig: m.uci.slice(0, 2), dest: m.uci.slice(2, 4), brush: "green" }) as DrawShape);
     if (ask.hint === 1) return own.map((m) => ({ orig: m.uci.slice(0, 2), brush: "green" }) as DrawShape);
     return [];
-  }, [ask, own, phase]);
+  }, [ask, own, phase, bonus]);
 
-  const canMove = phase === "ask" || phase === "fix";
+  const canMove = phase === "ask" || phase === "fix" || phase === "bonus";
   const boardDests = useMemo(() => (canMove ? dests(fen) : new Map<string, string[]>()), [canMove, fen]);
 
   if (!graph) return <p className="muted center">Loading…</p>;
@@ -261,10 +361,10 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
         <button className="btn ghost small" onClick={onExit}>← {graph.rep.name}</button>
         <span className="muted small">{score.done}/{score.total} · {score.done ? Math.round((score.correct / score.done) * 100) : 0}% ✓</span>
       </div>
-      <div className="movelist line">
+      <ScrollStrip cursor={line.length}>
         {line.map((s, i) => <span key={i} className="mv"><span className="mv-no">{startNo(i)}</span>{s}</span>)}
         {!line.length && <span className="muted small">Starting position</span>}
-      </div>
+      </ScrollStrip>
 
       <Board fen={fen} orientation={color} turnColor={turnOf(fen)} dests={boardDests} lastMove={lastMove}
              onMove={onMove} movableColor={color} shapes={shapes} />
@@ -291,6 +391,23 @@ export function OpeningTrainer({ repId, onExit }: { repId: string; onExit: () =>
         ))}
         {(phase === "ask" || phase === "fix") && altMove && altMove.fen === ask?.fen && <button className="btn" onClick={addAlt}>Add {altMove.san} to my repertoire</button>}
         {phase === "wrong" && <button className="btn primary" onClick={retry} autoFocus>Try again</button>}
+        {phase === "bonus" && bonus && <>
+          <p className="small muted">{bonus.b.reason}.</p>
+          <div className="row">
+            <button className="btn" onClick={() => answerBonus(bonus)}>I don't know</button>
+            <button className="btn ghost" onClick={endBonus}>Skip</button>
+          </div>
+        </>}
+        {phase === "bonusDone" && bonus && (
+          <div className="row">
+            {bonusAnswer && (
+              <button className="btn" disabled={bonusAdded} onClick={addBonus}>
+                {bonusAdded ? "✓ Added" : `Add ${bonus.b.san} ${bonusAnswer.san} to my repertoire`}
+              </button>
+            )}
+            <button className="btn primary" onClick={endBonus} autoFocus>Continue</button>
+          </div>
+        )}
 
         {notes.length > 0 && phase !== "done" && (
           <div className="notes">

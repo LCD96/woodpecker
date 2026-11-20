@@ -13,6 +13,8 @@ export interface Settings {
   /** Pérdida de probabilidad de victoria (0..1) a partir de la cual una jugada fuera del repertorio es un error */
   openingTolerance: number;
   newCardsPerDay: number;
+  /** De vez en cuando el rival juega algo fuera del repertorio en el entrenamiento */
+  openingBonus: boolean;
 }
 
 const DEFAULTS: Settings = {
@@ -21,6 +23,7 @@ const DEFAULTS: Settings = {
   explorerSpeeds: ["blitz", "rapid", "classical"],
   openingTolerance: 0.05,
   newCardsPerDay: 10,
+  openingBonus: true,
 };
 
 export async function getSettings(): Promise<Settings> {
