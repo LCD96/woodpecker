@@ -9,6 +9,7 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: "autoUpdate",
+      includeAssets: ["favicon-64.png", "apple-touch-icon.png"],
       workbox: {
         // Stockfish (~7 MB de wasm) se cachea al primer uso del análisis, no en la instalación
         globIgnores: ["**/stockfish/**"],
@@ -19,7 +20,9 @@ export default defineConfig({
         }],
       },
       manifest: {
+        id: ".",
         name: "Woodpecker",
+        description: "Woodpecker Method tactics trainer and opening repertoire trainer",
         short_name: "Woodpecker",
         start_url: ".",
         scope: ".",
@@ -30,7 +33,7 @@ export default defineConfig({
         icons: [
           { src: "pwa-192.png", sizes: "192x192", type: "image/png" },
           { src: "pwa-512.png", sizes: "512x512", type: "image/png" },
-          { src: "pwa-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
+          { src: "pwa-maskable-512.png", sizes: "512x512", type: "image/png", purpose: "maskable" },
         ],
       },
     }),
