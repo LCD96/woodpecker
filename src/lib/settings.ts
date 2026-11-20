@@ -8,7 +8,6 @@ export interface Settings {
   /** Solo en este dispositivo */
   lichessToken?: string;
   // Aperturas
-  explorerSource: "lichess" | "masters";
   explorerRatings: number[];
   explorerSpeeds: string[];
   /** Pérdida de probabilidad de victoria (0..1) a partir de la cual una jugada fuera del repertorio es un error */
@@ -18,7 +17,6 @@ export interface Settings {
 
 const DEFAULTS: Settings = {
   dailyGoalMin: 30,
-  explorerSource: "lichess",
   explorerRatings: [1400, 1600, 1800],
   explorerSpeeds: ["blitz", "rapid", "classical"],
   openingTolerance: 0.05,

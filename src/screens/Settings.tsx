@@ -61,13 +61,9 @@ export function Settings() {
       </Card>
 
       <Card title="Openings">
-        <p className="small">Explorer</p>
-        <div className="chips">
-          <button className={s.explorerSource === "lichess" ? "on" : ""} onClick={() => setSetting("explorerSource", "lichess")}>Lichess players</button>
-          <button className={s.explorerSource === "masters" ? "on" : ""} onClick={() => setSetting("explorerSource", "masters")}>Masters</button>
-        </div>
-        {s.explorerSource === "lichess" && <>
-          <p className="small">Ratings</p>
+        <p className="small muted">Explorer statistics "at your level" use Lichess games in these ratings and time controls
+          (they need the Lichess login above). Master games are always shown alongside.</p>
+        <p className="small">Ratings</p>
           <div className="chips">
             {RATING_BUCKETS.map((r) => <button key={r} className={s.explorerRatings.includes(r) ? "on" : ""}
               onClick={() => { const v = toggle(s.explorerRatings, r).sort((a, b) => a - b); if (v.length) setSetting("explorerRatings", v); }}>{r}+</button>)}
@@ -77,7 +73,6 @@ export function Settings() {
             {SPEEDS.map((x) => <button key={x} className={s.explorerSpeeds.includes(x) ? "on" : ""}
               onClick={() => { const v = toggle(s.explorerSpeeds, x); if (v.length) setSetting("explorerSpeeds", v); }}>{x}</button>)}
           </div>
-        </>}
         <p className="small">Moves outside your repertoire</p>
         <div className="chips">
           {TOLERANCE.map((t) => <button key={t.v} className={s.openingTolerance === t.v ? "on" : ""} onClick={() => setSetting("openingTolerance", t.v)}>{t.label}</button>)}

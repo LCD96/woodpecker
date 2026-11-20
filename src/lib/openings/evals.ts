@@ -30,12 +30,17 @@ async function localEval(fen: string, multiPv: number): Promise<CachedEval> {
   };
 }
 
-/** Mejores jugadas de la posición. Con multiPv > lo guardado, se vuelve a pedir. */
-export async function getEval(fen: string, multiPv = 3): Promise<CachedEval | undefined> {
+/**
+ * Mejores jugadas de la posición. Con multiPv > lo guardado, se vuelve a pedir.
+ * Con `cloudOnly` no se usa Stockfish local (para evaluar muchas posiciones de golpe).
+ */
+export async function getEval(fen: string, multiPv = 3, cloudOnly = false): Promise<CachedEval | undefined> {
   const key = posKey(fen);
   const hit = await db.evals.get(key);
   if (hit && (hit.lines.length >= multiPv || hit.source === "local")) return hit;
-  const e = await cloudEval(fen, multiPv).catch(() => undefined) ?? await localEval(fen, multiPv);
+  const cloud = await cloudEval(fen, multiPv).catch(() => undefined);
+  if (!cloud && cloudOnly) return hit;
+  const e = cloud ?? await localEval(fen, multiPv);
   if (!e.lines.length) return hit;
   // No guardar menos líneas de las que ya teníamos
   if (!hit || e.lines.length >= hit.lines.length) await db.evals.put(e);
